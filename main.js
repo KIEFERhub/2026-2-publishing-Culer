@@ -46,11 +46,15 @@ const DESIGN = {
   pullToClose: 90,     // 인트로에서 아래로 당겨 닫는 거리
   // 인트로 → 본문 스크롤: 제목이 상단바 제목으로 축소
   titleTop: 655,       // 타이틀 휠 상단 (기준 px)
-  barTitleCy: 75,      // 상단바 제목 중심 y (top 57 + 36/2)
+  barTitleCy: 75,      // 상단바 제목 중심 y (top 57 + 36/2) — 실제 값은 measure()에서 화면 기준으로 다시 잰다
   barTitleSize: 36,    // 상단바 제목 크기 (H1)
   introGap: 60,        // 인트로 제목 ~ 본문 제목 간격 (본문 Gap 60과 동일)
   // 편지
-  letterDuration: 720
+  letterDuration: 720,
+  // 브라우저 탭에서 화면 밖이 되는 시안의 영역 (measure 에서 필요한 만큼만 잘라낸다)
+  chromeTop: 54,       // 상태바 · 다이내믹 아일랜드
+  chromeBottom: 74,    // Safari 하단바 · 홈 인디케이터 (y 800 ~ 874)
+  maxBarShift: 45      // 챕터 상단바를 끌어올리는 최대값 (상태바 바로 아래 여백 유지)
 };
 
 const easeOutQuart = (t) => 1 - Math.pow(1 - t, 4);
@@ -129,8 +133,21 @@ class CulerArchive {
     this.drag = null;
     this.hold = null;          // 손가락에 잡힌 카드 { index, dx, dy, blend, onTop }
     this.lift = null;          // 올라오는 카드 { index, amount }
-    this.scale = { sx: 1, sy: 1, s: 1 };
+    this.scale = { sx: 1, sy: 1, s: 1, y0: 0 };
     this.titleWidths = [];
+    this.barCy = DESIGN.barTitleCy;
+    this.barH = 160;
+
+    // 모바일: 챕터를 읽는 동안 문서(window)를 스크롤시켜 주소창이 줄어들게 한다 (PC 프레임 보기에서는 안쪽 스크롤)
+    this.spacer = document.getElementById("scrollSpacer");
+    this.docScroll = !window.matchMedia("(min-width: 600px) and (hover: hover) and (pointer: fine)").matches;
+    this.docScrollOn = false;
+    this.pendingMeasure = false;
+
+    // 상태바 영역이 웹페이지 안에 있는지 (홈 화면 앱 = 있음, 브라우저 탭 = 없음)
+    this.safeProbe = el("div");
+    this.safeProbe.style.cssText = "position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top);visibility:hidden;pointer-events:none";
+    document.body.appendChild(this.safeProbe);
 
     this.openIndex = -1;       // 열려 있는 챕터
     this.readingIndex = -1;    // 인트로로 변형 중인 챕터 (닫히는 동안에도 유지)
@@ -149,6 +166,7 @@ class CulerArchive {
     if (document.fonts && document.fonts.ready) {
       document.fonts.ready.then(() => {
         this.measureTitles();
+        this.measureBar();
         this.update();
       });
     }
@@ -217,19 +235,50 @@ class CulerArchive {
   // ------------------------------------------------------------------
   // Measure
   // ------------------------------------------------------------------
+  /**
+   * 시안(402 × 874)을 실제 화면에 맞춘다.
+   * 너비에 맞췄을 때 높이가 모자라면, 브라우저가 따로 그리는 영역(상태바 · 하단바)만큼 시안의 위아래를 잘라낸다.
+   * - 상태바가 웹페이지 안에 있으면(홈 화면 앱) 위는 자르지 않는다
+   * - 그래도 모자라면 세로로 조금 눌러 담는다 (sy < sx)
+   * y0 = 위에서 잘라낸 시안 px. 홈 · 편지 레이어는 CSS --shift 만큼 끌어올려진다
+   */
   measure() {
     const w = this.frame.clientWidth || DESIGN.width;
     const h = this.frame.clientHeight || DESIGN.height;
     const sx = w / DESIGN.width;
-    const sy = h / DESIGN.height;
-    const s = Math.min(sx, sy);
-    this.scale = { sx, sy, s };
+    const safeTop = this.safeProbe ? this.safeProbe.offsetHeight : 0;
 
-    this.frame.style.setProperty("--sx", sx.toFixed(4));
-    this.frame.style.setProperty("--sy", sy.toFixed(4));
-    this.frame.style.setProperty("--s", s.toFixed(4));
+    const excess = DESIGN.height - h / sx; // 너비 기준으로 모자라는 시안 높이
+    let dropTop = 0;
+    let dropBottom = 0;
+    if (excess > 2) { // 반올림 오차 무시
+      const canTop = safeTop > 0 ? 0 : DESIGN.chromeTop;
+      const canBottom = DESIGN.chromeBottom;
+      const take = Math.min(excess, canTop + canBottom);
+      dropTop = (take * canTop) / (canTop + canBottom);
+      dropBottom = take - dropTop;
+    }
+
+    const sy = h / (DESIGN.height - dropTop - dropBottom);
+    const s = Math.min(sx, sy);
+    this.scale = { sx, sy, s, y0: dropTop };
+
+    const style = this.frame.style;
+    style.setProperty("--sx", sx.toFixed(4));
+    style.setProperty("--sy", sy.toFixed(4));
+    style.setProperty("--s", s.toFixed(4));
+    style.setProperty("--shift", `${(dropTop * sy).toFixed(2)}px`);
+    style.setProperty("--bar-shift", `${Math.min(dropTop, DESIGN.maxBarShift).toFixed(2)}px`);
 
     this.measureTitles();
+    this.measureBar();
+  }
+
+  /** 상단바 제목의 실제 위치 · 상단바 높이 (축소되는 제목이 도착할 자리) */
+  measureBar() {
+    const t = this.topbarTitle;
+    if (t && t.offsetHeight) this.barCy = t.offsetTop + t.offsetHeight / 2;
+    if (this.topbar.offsetHeight) this.barH = this.topbar.offsetHeight;
   }
 
   measureTitles() {
@@ -385,7 +434,8 @@ class CulerArchive {
           const target = Math.min(DESIGN.introTitleSize / 60, (DESIGN.introTitleMaxWidth * s) / Math.max(1, this.titleWidths[i]));
           // 첫 줄 상단을 y 611 (75px) 에 맞추는 이동량 (60/48 → 75/60 행간 기준)
           const dy = (-25.7 + 6 * lines) * sy;
-          this.layoutIntro(DESIGN.titleTop * sy + dy + (this.titleHeights[i] * (1 + target)) / 2);
+          const homeShift = this.scale.y0 * sy; // 홈 레이어 좌표 → 화면 좌표
+          this.layoutIntro(DESIGN.titleTop * sy + dy + (this.titleHeights[i] * (1 + target)) / 2 - homeShift);
           x = lerp(x, (DESIGN.introTitleCx - 206) * sx - this.titleWidths[i] / 2, R);
           y = lerp(y, dy, R);
           rot *= hide;
@@ -396,15 +446,15 @@ class CulerArchive {
           const w = this.titleWidths[i];
           const h = this.titleHeights[i];
           const top = DESIGN.titleTop * sy;
-          const introCy = top + y + h / 2;
-          this.barTravel = Math.max(1, introCy - DESIGN.barTitleCy);
+          const introCy = top + y + h / 2 - homeShift;
+          this.barTravel = Math.max(1, introCy - this.barCy);
           const p = clamp01(this.scrollY / this.barTravel);
           barProgress = p;
           if (p > 0) {
             const cx = lerp(206 * sx + x + w / 2, frameW / 2, p);
-            const cy = lerp(introCy, DESIGN.barTitleCy, p);
+            const cy = lerp(introCy, this.barCy, p);
             x = cx - 206 * sx - w / 2;
-            y = cy - top - h / 2 + this.scrollY; // 홈 레이어가 올라간 만큼 되돌린다
+            y = cy + homeShift - top - h / 2 + this.scrollY; // 홈 레이어가 올라간 만큼 되돌린다
             sc = lerp(sc, DESIGN.barTitleSize / (60 * s), p);
             // 한 줄 제목은 상단바 제목과 같은 자리 · 크기에서 맞바꾸고, 두 줄 제목은 마지막에 교차
             barFade = lines > 1 ? clamp01((p - 0.85) / 0.15) : (p >= 1 ? 1 : 0);
@@ -428,9 +478,9 @@ class CulerArchive {
     const bar = this.topbar.style;
     bar.setProperty("--bar-title", barFade.toFixed(3));
     bar.setProperty("--bar-icons", clamp01((barProgress - 0.8) / 0.2).toFixed(3));
-    // 본문 위끝이 상단바(y 170 → 110)로 올라오면 배경이 채워진다. 제목이 도착하기 전에는 열지 않는다
+    // 본문 위끝이 상단바 아래끝 근처(+10 → −50)로 올라오면 배경이 채워진다. 제목이 도착하기 전에는 열지 않는다
     const contentTop = (this.introHeight || frameH) - this.scrollY;
-    const barBg = barProgress >= 1 ? clamp01((170 - contentTop) / 60) : 0;
+    const barBg = barProgress >= 1 ? clamp01((this.barH + 10 - contentTop) / 60) : 0;
     bar.setProperty("--bar-bg", barBg.toFixed(3));
     this.topbar.classList.toggle("is-visible", this.openIndex >= 0 && barProgress > 0.9);
   }
@@ -558,9 +608,26 @@ class CulerArchive {
   // ------------------------------------------------------------------
   bindEvents() {
     window.addEventListener("resize", () => {
+      if (this.docScrollOn) {
+        // 주소창이 줄거나 늘 때마다 크기가 바뀌므로, 읽는 동안은 배율을 고정하고 닫을 때 다시 잰다
+        this.pendingMeasure = true;
+        this.updateSpacer();
+        this.update();
+        return;
+      }
       this.measure();
       this.update();
     });
+
+    window.addEventListener("scroll", () => {
+      if (this.docScrollOn) this.viewScroll.scrollTop = window.scrollY;
+    }, { passive: true });
+
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver(() => this.updateSpacer());
+      ro.observe(this.viewContent);
+      ro.observe(this.viewScroll);
+    }
 
     this.stage.addEventListener("pointerdown", (e) => this.onPointerDown(e));
     window.addEventListener("pointermove", (e) => this.onPointerMove(e));
@@ -860,6 +927,35 @@ class CulerArchive {
     this.viewContent.replaceChildren(this.buildChapter(index));
     this.viewScroll.scrollTop = 0;
     this.scrollY = 0;
+    if (this.docScrollOn) window.scrollTo(0, 0);
+    this.updateSpacer();
+  }
+
+  /** 문서 스크롤 켜기/끄기 (모바일에서 챕터를 읽는 동안만) */
+  setDocScroll(on) {
+    on = on && this.docScroll;
+    if (on === this.docScrollOn) return;
+    this.docScrollOn = on;
+    document.documentElement.classList.toggle("doc-scroll", on);
+    window.scrollTo(0, 0);
+    this.updateSpacer();
+  }
+
+  /** 문서 높이 = 본문 스크롤 높이 (window 스크롤 범위가 본문 스크롤 범위와 같아지도록) */
+  updateSpacer() {
+    if (!this.spacer) return;
+    if (!this.docScrollOn) {
+      this.spacer.style.height = "0px";
+      return;
+    }
+    const extra = document.documentElement.clientHeight - this.viewScroll.clientHeight;
+    this.spacer.style.height = `${Math.max(0, this.viewScroll.scrollHeight + extra)}px`;
+  }
+
+  /** 본문 스크롤 위치 이동 (문서 스크롤 중이면 window 를 움직인다) */
+  scrollContentTo(top, smooth) {
+    const target = this.docScrollOn ? window : this.viewScroll;
+    target.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
   }
 
   open(index, { instant = false } = {}) {
@@ -876,6 +972,7 @@ class CulerArchive {
     this.view.removeAttribute("inert");
     this.view.setAttribute("aria-hidden", "false");
     this.frame.classList.add("is-reading");
+    this.setDocScroll(true);
     this.viewScroll.focus({ preventScroll: true });
 
     if (instant) {
@@ -900,6 +997,11 @@ class CulerArchive {
         this.readingIndex = -1;
         this.scrollY = 0;
         this.viewScroll.scrollTop = 0;
+        this.setDocScroll(false);
+        if (this.pendingMeasure) {
+          this.pendingMeasure = false;
+          this.measure();
+        }
         this.frame.classList.remove("is-reading");
         this.view.classList.remove("is-closing");
         this.view.setAttribute("inert", "");
@@ -947,8 +1049,8 @@ class CulerArchive {
       return;
     }
     const frameRect = this.frame.getBoundingClientRect();
-    if (e.clientY - frameRect.top > 720 * this.scale.sy) {
-      this.viewScroll.scrollTo({ top: this.barTravel || this.viewIntro.offsetHeight, behavior: "smooth" });
+    if (e.clientY - frameRect.top > (720 - this.scale.y0) * this.scale.sy) {
+      this.scrollContentTo(this.barTravel || this.viewIntro.offsetHeight, true);
     }
   }
 

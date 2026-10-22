@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#b31c44">
+  <!-- 홈 화면에 추가해 열면 주소창 없이 화면 전체(상태바 · 다이내믹 아일랜드 뒤까지)를 쓴다 -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CULER">
   <title>BARÇA ARCHIVE : CULER</title>
 
   <!-- Typography System: Instrument Serif (Regular, Italic) + Asta Sans (Light 300, Medium 500, ExtraBold 800) -->
@@ -114,6 +119,9 @@
     <!-- PC 전용: 앱 UI 보기 켜기/끄기 -->
     <button class="device-toggle" id="deviceToggle" type="button" aria-pressed="true">앱 UI 보기 <b>ON</b></button>
   </div>
+
+  <!-- 모바일에서 챕터를 읽을 때 문서 높이를 만드는 투명 공간 (주소창 축소용) -->
+  <div class="scroll-spacer" id="scrollSpacer" aria-hidden="true"></div>
 
   <script src="chapters.js"></script>
   <script src="main.js"></script>

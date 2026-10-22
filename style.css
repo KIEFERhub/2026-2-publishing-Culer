@@ -150,27 +150,13 @@ button {
    APP + FRAME
    ========================================================================== */
 /* 시안(402 × 874)은 상태바 · 다이나믹 아일랜드 · 하단 브라우저 바까지 포함한 '휴대폰 화면 전체' 기준.
-   iOS Safari 에서 position: fixed 는 상태바 아래 ~ 주소창 위까지만 차지해서
-   위아래가 단색으로 비고 상단 여백이 두 번 들어가므로,
-   앱을 '가장 큰 화면 높이(100lvh)'로 깔아 상태바 · 주소창 뒤까지 채운다. */
-html, body {
-  min-height: 100%;
-}
-
-@supports (height: 100lvh) {
-  html, body { height: 100lvh; }
-}
-
-body {
-  position: relative;
-}
-
+   브라우저 탭에서는 상태바 · 주소창 영역이 웹페이지 밖이라 그 뒤에 그래픽을 그릴 수 없다.
+   그래서 main.js(measure)가 실제 화면에 없는 영역만큼 시안의 위(상태바 54) · 아래(브라우저 바 74)를 잘라내고
+   남은 부분을 화면에 맞춘다. 홈 화면에 추가해 열면 상태바 뒤까지 화면 전체를 쓴다.
+   --shift : 위에서 잘라낸 만큼 홈 · 편지 레이어를 끌어올리는 값 (px) */
 .editorial-app {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  position: fixed;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -351,7 +337,7 @@ body {
 .bg-reading-blur {
   position: absolute;
   left: calc(-28px * var(--sx));
-  top: calc(-10px * var(--sy));
+  top: calc(-10px * var(--sy) - var(--shift, 0px));
   width: calc(458px * var(--sx));
   height: calc(584px * var(--sy));
   object-fit: cover;
@@ -368,7 +354,10 @@ body {
 .home {
   --ts: var(--s);
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: calc(-1 * var(--shift, 0px));
+  height: calc(874px * var(--sy));
   color: var(--color-gold);
   user-select: none;
   -webkit-user-select: none;
@@ -587,7 +576,10 @@ body {
 .letter {
   --ts: var(--s);
   position: absolute;
-  inset: 0;
+  left: 0;
+  right: 0;
+  top: calc(-1 * var(--shift, 0px));
+  height: calc(874px * var(--sy));
   z-index: 40;
   color: var(--color-gold);
   text-align: center;
@@ -674,6 +666,29 @@ body {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+}
+
+/* 모바일에서 챕터를 읽는 동안: 문서(window)가 스크롤되어야 크롬 · Safari 주소창이 줄어든다.
+   앱은 화면에 고정해 두고, 투명한 .scroll-spacer 로 문서 높이를 만든 뒤
+   window 스크롤 값을 .cv-scroll 에 그대로 옮긴다 (main.js) */
+.scroll-spacer {
+  width: 1px;
+  height: 0;
+  pointer-events: none;
+}
+
+html.doc-scroll,
+html.doc-scroll body {
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+html.doc-scroll::-webkit-scrollbar { display: none; }
+
+html.doc-scroll .cv-scroll {
+  overflow: hidden; /* 손가락 스크롤이 문서로 전달되도록 */
 }
 
 .cv-scroll::-webkit-scrollbar {
@@ -1097,12 +1112,13 @@ body {
    --bar-title : 축소되어 올라온 제목과 교차
    --bar-icons : 제목이 거의 도착하면 홈 · 닫기 아이콘
    --bar-bg    : 본문이 상단에 닿을 때 챕터 색 그라데이션 */
+/* --bar-shift : 브라우저가 상태바를 따로 그릴 때 시안의 상단 여백을 줄이는 값 (main.js) */
 .cv-topbar {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  height: 160px;
+  height: calc(160px - var(--bar-shift, 0px));
   z-index: 2;
   color: var(--color-gold);
   pointer-events: none;
@@ -1112,7 +1128,7 @@ body {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(to bottom, var(--chapter-color) 0, var(--chapter-color) 96px, transparent 150px);
+  background: linear-gradient(to bottom, var(--chapter-color) 0, var(--chapter-color) calc(96px - var(--bar-shift, 0px)), transparent calc(150px - var(--bar-shift, 0px)));
   opacity: var(--bar-bg, 0);
 }
 
@@ -1133,7 +1149,7 @@ body {
 /* 시안: 홈 아이콘 중심 (32, 80) · 제목 상단 57 · 닫기 중심 (370, 80) */
 .cv-icon {
   position: absolute;
-  top: 60px;
+  top: max(calc(60px - var(--bar-shift, 0px)), calc(env(safe-area-inset-top) + 6px));
   width: 40px;
   height: 40px;
   display: flex;
@@ -1156,7 +1172,7 @@ body {
 
 .cv-topbar-title {
   position: absolute;
-  top: 57px;
+  top: max(calc(57px - var(--bar-shift, 0px)), calc(env(safe-area-inset-top) + 3px));
   left: 64px;
   right: 64px;
   text-align: center;
