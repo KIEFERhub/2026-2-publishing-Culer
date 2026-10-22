@@ -259,12 +259,16 @@ class CulerArchive {
     // 1. Background stripes (%)
     const base = (DESIGN.baseStripe / DESIGN.width) * 100;
     const active = (DESIGN.activeStripe / DESIGN.width) * 100;
+    const widths = [];
     this.stripes.forEach((col, i) => {
       let pct = base;
       if (i === kw) pct = active - f * (active - base);
       else if (i === this.wrap(kw + 1)) pct = base + f * (active - base);
-      col.style.width = `${lerp(pct, 100 / this.n, this.letter)}%`;
+      const w = lerp(pct, 100 / this.n, this.letter);
+      col.style.width = `${w}%`;
+      widths[i] = w;
     });
+    this.paintEdges(widths, R);
 
     // 2. Cards
     this.cards.forEach((card, i) => {
@@ -429,6 +433,43 @@ class CulerArchive {
     const barBg = barProgress >= 1 ? clamp01((170 - contentTop) / 60) : 0;
     bar.setProperty("--bar-bg", barBg.toFixed(3));
     this.topbar.classList.toggle("is-visible", this.openIndex >= 0 && barProgress > 0.9);
+  }
+
+  /**
+   * 모바일 브라우저의 상태바 · 주소창 뒤 영역 채우기.
+   * iOS Safari 는 화면 가장자리 뒤쪽을 페이지 배경(html)으로 칠하므로,
+   * 줄무늬와 같은 그라데이션을 html 배경에 그려 화면 끝까지 이어 보이게 한다.
+   * (PC 처럼 프레임이 가운데 놓이는 넓은 화면에서는 기존 어두운 배경을 유지)
+   */
+  paintEdges(widths, reveal) {
+    const mobile = !window.matchMedia("(min-width: 600px), (orientation: landscape) and (max-height: 500px)").matches;
+    let bg = "";
+    let tint = "#0b090c";
+    if (mobile) {
+      if (reveal >= 0.5 && this.readingIndex >= 0) {
+        bg = tint = this.chapters[this.readingIndex].color;
+      } else {
+        let x = 0;
+        const stops = widths.map((w, i) => {
+          const c = this.chapters[i].color;
+          const seg = `${c} ${x.toFixed(2)}% ${(x + w).toFixed(2)}%`;
+          x += w;
+          return seg;
+        });
+        bg = `linear-gradient(to right, ${stops.join(", ")})`;
+        tint = this.chapters[this.currentIndex].color;
+      }
+    }
+    if (bg !== this.edgeBg) {
+      this.edgeBg = bg;
+      document.documentElement.style.background = bg;
+      document.body.style.background = mobile ? "transparent" : "";
+    }
+    if (tint !== this.edgeTint) {
+      this.edgeTint = tint;
+      if (!this.themeMeta) this.themeMeta = document.querySelector('meta[name="theme-color"]');
+      if (this.themeMeta) this.themeMeta.setAttribute("content", tint);
+    }
   }
 
   // ------------------------------------------------------------------

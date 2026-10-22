@@ -172,8 +172,14 @@ button {
 }
 
 /* PC · 태블릿 · 가로 모드: 402:874 비율의 세로 프레임을 가운데에 */
+/* 모바일: 프레임은 투명하게 두고 줄무늬가 가장자리 배경(html)과 이어지게 한다 */
+@media not all and (min-width: 600px) {
+  .frame { background-color: transparent; }
+}
+
 @media (min-width: 600px), (orientation: landscape) and (max-height: 500px) {
   .frame {
+    background-color: var(--color-burgundy);
     height: 100%;
     width: auto;
     aspect-ratio: 402 / 874;
