@@ -1,0 +1,7 @@
+# 웹페이지에 필요 없는 시안·작업 파일
+*.pdf
+transition_design.png
+bottom_text_crop.png
+figma_exact_bottom_text.png
+_to_delete/
+.DS_Store
