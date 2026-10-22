@@ -460,9 +460,11 @@ class CulerArchive {
         tint = this.chapters[this.currentIndex].color;
       }
     }
-    if (bg !== this.edgeBg) {
-      this.edgeBg = bg;
+    if (bg + tint !== this.edgeBg) {
+      this.edgeBg = bg + tint;
       document.documentElement.style.background = bg;
+      // Safari 는 바 뒤를 그라데이션이 아닌 '배경색'으로 칠하므로 현재 색도 함께 지정
+      if (mobile) document.documentElement.style.backgroundColor = tint;
       document.body.style.background = mobile ? "transparent" : "";
     }
     if (tint !== this.edgeTint) {
